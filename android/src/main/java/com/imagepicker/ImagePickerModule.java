@@ -8,6 +8,7 @@ import android.os.Build;
 import android.provider.MediaStore;
 
 import com.facebook.react.bridge.ActivityEventListener;
+import com.facebook.react.bridge.BaseActivityEventListener;
 import com.facebook.react.bridge.Callback;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -22,7 +23,7 @@ import java.util.List;
 import static com.imagepicker.Utils.*;
 
 @ReactModule(name = ImagePickerModule.NAME)
-public class ImagePickerModule extends ReactContextBaseJavaModule implements ActivityEventListener {
+public class ImagePickerModule extends ReactContextBaseJavaModule {
     static final String NAME = "ImagePickerManager";
 
     // Public to let consuming apps hook into the image picker response
@@ -39,10 +40,50 @@ public class ImagePickerModule extends ReactContextBaseJavaModule implements Act
     Options options;
     Uri cameraCaptureURI;
 
+    private final ActivityEventListener mActivityEventListener = new BaseActivityEventListener() {
+          @Override
+          public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
+            // onActivityResult is called even when ActivityNotFoundException occurs
+            if (!isValidRequestCode(requestCode) || (callback == null)) {
+              return;
+            }
+
+            if (resultCode != Activity.RESULT_OK) {
+              if (requestCode == REQUEST_LAUNCH_IMAGE_CAPTURE) {
+                deleteFile(fileUri);
+              }
+              callback.invoke(getCancelMap());
+              return;
+            }
+
+            switch (requestCode) {
+              case REQUEST_LAUNCH_IMAGE_CAPTURE:
+                if (options.saveToPhotos) {
+                  saveToPublicDirectory(cameraCaptureURI, reactContext, "photo");
+                }
+
+                onAssetsObtained(Collections.singletonList(fileUri));
+                break;
+
+              case REQUEST_LAUNCH_LIBRARY:
+                onAssetsObtained(collectUrisFromData(data));
+                break;
+
+              case REQUEST_LAUNCH_VIDEO_CAPTURE:
+                if (options.saveToPhotos) {
+                  saveToPublicDirectory(cameraCaptureURI, reactContext, "video");
+                }
+
+                onAssetsObtained(Collections.singletonList(fileUri));
+                break;
+            }
+          }
+        };
+
     public ImagePickerModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.reactContext = reactContext;
-        this.reactContext.addActivityEventListener(this);
+        this.reactContext.addActivityEventListener(mActivityEventListener);
     }
 
     @Override
@@ -161,46 +202,4 @@ public class ImagePickerModule extends ReactContextBaseJavaModule implements Act
             callback = null;
         }
     }
-
-    @Override
-    public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
-
-        // onActivityResult is called even when ActivityNotFoundException occurs
-        if (!isValidRequestCode(requestCode) || (this.callback == null)) {
-            return;
-        }
-
-        if (resultCode != Activity.RESULT_OK) {
-            if (requestCode == REQUEST_LAUNCH_IMAGE_CAPTURE) {
-                deleteFile(fileUri);
-            }
-            callback.invoke(getCancelMap());
-            return;
-        }
-
-        switch (requestCode) {
-            case REQUEST_LAUNCH_IMAGE_CAPTURE:
-                if (options.saveToPhotos) {
-                    saveToPublicDirectory(cameraCaptureURI, reactContext, "photo");
-                }
-
-                onAssetsObtained(Collections.singletonList(fileUri));
-                break;
-
-            case REQUEST_LAUNCH_LIBRARY:
-                onAssetsObtained(collectUrisFromData(data));
-                break;
-
-            case REQUEST_LAUNCH_VIDEO_CAPTURE:
-                if (options.saveToPhotos) {
-                    saveToPublicDirectory(cameraCaptureURI, reactContext, "video");
-                }
-
-                onAssetsObtained(Collections.singletonList(fileUri));
-                break;
-        }
-    }
-
-    @Override
-    public void onNewIntent(Intent intent) { }
 }
